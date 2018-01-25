@@ -1,0 +1,225 @@
+---
+- hosts: 172.22.0.5
+  become: yes
+
+  tasks:
+
+  - name: check  nginx-release repo
+    shell: rpm -qa | grep nginx-release
+    register: result
+    ignore_errors: True
+    always_run: yes
+    changed_when: no
+
+  - name: add nginx-release (CentOS6/CentOS7) repo
+    yum: name="http://nginx.org/packages/centos/{{ansible_distribution_major_version}}/noarch/RPMS/nginx-release-centos-{{ansible_distribution_major_version}}-0.el{{ansible_distribution_major_version}}.ngx.noarch.rpm"
+    when: result|failed
+
+  - name: install nginx
+    yum: name=nginx state=present 
+
+  - name: start nginx
+    service: name=nginx enabled=yes state=started
+
+  - name: check remi php repo
+    shell: rpm -qa | grep remi-release-7
+    register: result
+    ignore_errors: True
+    always_run: yes
+    changed_when: no
+
+  - name: add epel repo
+    yum: name="https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm"
+    when: result|failed
+
+  - name: add remi repo
+    yum: name="http://rpms.remirepo.net/enterprise/remi-release-7.rpm"
+    when: result|failed
+
+  - name: install php packages
+    yum: name=php,php-fpm,php-pdo,php-mbstring,php-mysqlnd,php-pecl-memcache,composer state=present enablerepo=remi-php70
+    notify: restart php-fpm
+
+  - name: start php-fpm
+    service: name=php-fpm enabled=yes state=started
+
+  - name: deploy nginx config
+    template:
+      src: templates/laravel.conf.j2
+      dest: /etc/nginx/conf.d/laravel.conf
+      owner: root
+      group: root
+      mode: 644
+    notify: restart nginx
+
+
+  - name: check  percona-release repo
+    shell: rpm -qa | grep percona-release
+    register: result
+    ignore_errors: True
+    always_run: yes
+    changed_when: no
+
+  - name: add percona repo
+    yum: name="http://www.percona.com/downloads/percona-release/redhat/0.1-4/percona-release-0.1-4.noarch.rpm"
+    when: result|failed
+
+  - name: erase maria
+    yum: name=mariadb,mariadb-libs,mariadb-test,mariadb-devel state=absent
+
+  - name: install percona mysql and deps
+    yum: name=Percona-Server-server-57,policycoreutils-python state=present
+
+  - name: deploy my.cnf
+    template:
+      src: templates/my.cnf.j2
+      dest: /etc/my.cnf
+      owner: root
+      group: root
+      mode: 644
+
+  - name: Create db0
+    shell: mysql_install_db --user=mysql --datadir=/var/lib/mysql/instance0
+    args:
+      creates: "/var/lib/mysql/instance0/mysql"
+
+  - name: start mysqld@instance0
+    service: name=mysqld@instance0 enabled=yes state=started
+
+  - name: change db0 pwd
+    shell: mysqladmin -uroot -S /var/run/mysqld/mysqld-instance0.sock -p$(grep -v ^# /root/.mysql_secret) password 'password0' && touch /root/.mysql_db0_pwd
+    args:
+      creates: "/root/.mysql_db0_pwd"
+
+  - name: selinux mysql ports
+    seport: 
+      ports: 3311,3312
+      proto: tcp
+      setype: mysqld_port_t
+      state: present
+
+  - name: Create db1
+    shell: mysql_install_db --user=mysql --datadir=/var/lib/mysql/instance1
+    args:
+      creates: "/var/lib/mysql/instance1/mysql"
+
+  - name: start mysqld@instance1
+    service: name=mysqld@instance1 enabled=yes state=started
+
+  - name: change db1 pwd
+    shell: mysqladmin -uroot -S /var/run/mysqld/mysqld-instance1.sock -p$(grep -v ^# /root/.mysql_secret) password 'password1' && touch /root/.mysql_db1_pwd
+    args:
+      creates: "/root/.mysql_db1_pwd"
+
+  - name: Create db2
+    shell: mysql_install_db --user=mysql --datadir=/var/lib/mysql/instance2
+    args:
+      creates: "/var/lib/mysql/instance2/mysql"
+
+  - name: start mysqld@instance2
+    service: name=mysqld@instance2 enabled=yes state=started
+
+  - name: change db2 pwd
+    shell: mysqladmin -uroot -S /var/run/mysqld/mysqld-instance2.sock -p$(grep -v ^# /root/.mysql_secret) password 'password2' && touch /root/.mysql_db2_pwd
+    args:
+      creates: "/root/.mysql_db2_pwd"
+
+  - name: install memcached
+    yum: name=memcached state=present
+
+  - name: start memcached
+    service: name=memcached enabled=yes state=started
+
+  - name: install java
+    yum: name=java-1.8.0-openjdk.x86_64 state=present
+
+  - name: check elasticsearch is installed
+    shell: rpm -qa | grep elasticsearch
+    register: result
+    ignore_errors: True
+    always_run: yes
+    changed_when: no
+
+  - name: install elasticsearch
+    yum: name="https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-6.1.2.rpm" state=present
+    when: result|failed
+
+  - name: ES listens on all
+    lineinfile: >
+      dest=/etc/elasticsearch/elasticsearch.yml
+      line='network.host: 0.0.0.0'
+    notify: restart ES
+
+  - name: start ES
+    service: name=elasticsearch enabled=yes state=started
+
+  - name: install other packages
+    yum: name=git,npm state=present 
+
+  - name: iptables input established
+    iptables:
+        chain: INPUT
+        ctstate: ESTABLISHED,RELATED
+        jump: ACCEPT
+
+  - name: iptables input 22
+    iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: 22
+        jump: ACCEPT
+
+  - name: iptables input 80
+    iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: 80
+        jump: ACCEPT
+
+  - name: iptables input 3306
+    iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: 3306
+        jump: ACCEPT
+
+  - name: iptables input 9200
+    iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: 9200
+        jump: ACCEPT
+
+  - name: iptables to loopback
+    iptables:
+        chain: INPUT
+        in_interface: lo
+        jump: ACCEPT
+
+  - name: iptables from loopback
+    iptables:
+        chain: OUTPUT
+        out_interface: lo
+        jump: ACCEPT
+
+  - name: iptables input policy drop
+    iptables:
+      chain: INPUT
+      policy: DROP
+
+  - name: clone Laravel-Enterprise-Starter-Kit
+    shell: git clone https://github.com/sroutier/Laravel-Enterprise-Starter-Kit.git  /var/www/html
+    args:
+      creates: "/var/www/html"
+
+  handlers:
+  - name: restart ES
+    service: name=elasticsearch enabled=yes state=restarted
+
+  - name: restart php-fpm
+    service: name=php-fpm enabled=yes state=restarted
+
+  - name: restart nginx
+    service: name=nginx enabled=yes state=restarted
+
+

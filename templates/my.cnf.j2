@@ -1,0 +1,24 @@
+[mysqld@instance0]
+user		= mysql
+pid-file	= /var/run/mysqld/mysqld-instance0.pid
+socket		= /var/run/mysqld/mysqld-instance0.sock
+port		= 3306
+datadir		= /var/lib/mysql/instance0
+log-error       = /var/log/mysql-instance0.log
+
+[mysqld@instance1]
+user            = mysql
+pid-file        = /var/run/mysqld/mysqld-instance1.pid
+socket          = /var/run/mysqld/mysqld-instance1.sock
+port            = 3311
+datadir         = /var/lib/mysql/instance1
+log-error       = /var/log/mysql-instance1.log
+
+[mysqld@instance2]
+user            = mysql
+pid-file        = /var/run/mysqld/mysqld-instance2.pid
+socket          = /var/run/mysqld/mysqld-instance2.sock
+port            = 3312
+datadir         = /var/lib/mysql/instance2
+log-error       = /var/log/mysql-instance2.log
+ 
