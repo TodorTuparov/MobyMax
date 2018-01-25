@@ -1,0 +1,41 @@
+# Assumptions:
+- while there are safer scenarios that imply downtime, my plan is to do with with no downtime, so I am assuming no downtime is a business requirement
+- the plan wil be tested in a stagng environment before going to live; the final test would be pefromed with LIVE data, if possible
+- during the migration there si the posibility to use additional hardware 
+- the code runs on both php 5.5 and php 7 with no issues
+- the load balancer is also a centos6 machine
+- all 3 database servers are masters and store different sections of the platform's data
+- all migrations are being done at the lowest traffic
+- an additional public IP is available
+
+Step 1: Load balancer
+
+- deploy Centos7 on an additional machine 
+- deploy load balancer software (nginx, haproxy etc) and configure it identically as the LIVE one
+- switch DNS record/records to the new machine (lower TTL)
+- monitor traffic
+- switch off load balancer software on the old machine when there is no traffic
+- decommision old machine
+
+Step 2: Databases (phase1)
+- perform the same operation (dexcripbed below) on each of the masters, one at a time
+- deploy Centos7 and mysql 5.6 on a new machine
+- configure the new machine as a slave for the old one
+- perform an  xtrabackup on the old machine
+- switchover the app servers to the new machine. If this is not possible because of persistent connections, use another layer, like haproxy, to perform a smooth switchover 
+- monitor logs for any errors/exceptions
+
+Step 3: Databases (phase2)
+- perform the same operation (dexscribed below) on each of the masters, one at a time
+- fresh install Centos7 and mysql 5.7 on the initial machine
+- configure the new machine as a slave for the one running mysql 5.6
+- perform an  xtrabackup on the one running mysql 5.6
+- switchover the app servers to the new machine. If this is not possible because of persistent connections, use another layer, like haproxy, to perform a smooth switchover  
+- monitor logs for any errors/exceptions
+
+Step 4: Web servers 
+- perform the same operation (described below) on each of the web servers, one at a time
+- deploy Centos7 and php7 on a new machine
+- deploy same code as on the existing machine (the one to be replaced)
+- reconfigure the load balancer to switch the traffic from the old machine to the new one
+- monitor logs for any errors/exceptions
